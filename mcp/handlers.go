@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"whatsapp-mcp/config"
 	"whatsapp-mcp/storage"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -704,13 +705,21 @@ func (m *MCPServer) handleGetMyInfo(ctx context.Context, request mcp.CallToolReq
 }
 
 // handleTranscribeAudioMessage handles the transcribe_audio_message tool request.
+// Decoupled from the MCP RPC ctx so whisper isn't killed by the upstream
+// proxy's request timeout (mcpproxy defaults to ~30s, whisper-cli with the
+// small model can run 60-120s on longer voice notes). Configurable via
+// TRANSCRIBE_TIMEOUT_SECONDS (default 300s).
 func (m *MCPServer) handleTranscribeAudioMessage(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	messageID, err := request.RequireString("message_id")
 	if err != nil {
 		return mcp.NewToolResultError("message_id parameter is required"), nil
 	}
 
-	transcript, err := m.wa.TranscribeMessage(ctx, messageID)
+	transcribeTimeout := time.Duration(config.GetEnvInt64("TRANSCRIBE_TIMEOUT_SECONDS", 300)) * time.Second
+	transcribeCtx, cancel := context.WithTimeout(context.Background(), transcribeTimeout)
+	defer cancel()
+
+	transcript, err := m.wa.TranscribeMessage(transcribeCtx, messageID)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to transcribe %s: %v", messageID, err)), nil
 	}
