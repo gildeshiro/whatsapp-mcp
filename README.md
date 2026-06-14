@@ -254,7 +254,7 @@ Existing clients using `/mcp/{key}` continue to work unchanged.
   "mcpServers": {
     "whatsapp": {
       "url": "http://localhost:8080/mcp/your-secret-api-key",
-      "transport": "http"
+      "type": "http"
     }
   }
 }
