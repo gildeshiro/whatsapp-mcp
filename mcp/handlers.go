@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"whatsapp-mcp/config"
+	"whatsapp-mcp/paths"
 	"whatsapp-mcp/storage"
 	"whatsapp-mcp/whatsapp"
 
@@ -276,6 +279,7 @@ func (m *MCPServer) handleGetChatMessages(ctx context.Context, request mcp.CallT
 			case "downloaded":
 				result.WriteString(" [Downloaded]")
 				fmt.Fprintf(&result, "\n   Resource: whatsapp://media/%s", msg.ID)
+				fmt.Fprintf(&result, "\n   Local file: %s", paths.GetMediaPath(meta.FilePath))
 			case "pending":
 				result.WriteString(" [Not downloaded]")
 			case "failed":
@@ -364,6 +368,7 @@ func (m *MCPServer) handleSearchMessages(ctx context.Context, request mcp.CallTo
 			case "downloaded":
 				result.WriteString(" [Downloaded]")
 				fmt.Fprintf(&result, "\n   Resource: whatsapp://media/%s", msg.ID)
+				fmt.Fprintf(&result, "\n   Local file: %s", paths.GetMediaPath(meta.FilePath))
 			case "pending":
 				result.WriteString(" [Not downloaded]")
 			case "failed":
@@ -524,6 +529,8 @@ func (m *MCPServer) handleLoadMoreMessages(ctx context.Context, request mcp.Call
 				switch meta.DownloadStatus {
 				case "downloaded":
 					result.WriteString(" [Downloaded]")
+					fmt.Fprintf(&result, "\n   Resource: whatsapp://media/%s", msg.ID)
+					fmt.Fprintf(&result, "\n   Local file: %s", paths.GetMediaPath(meta.FilePath))
 				case "pending":
 					result.WriteString(" [Not downloaded]")
 				case "failed":
@@ -740,7 +747,24 @@ func (m *MCPServer) handleTranscribeAudioMessage(ctx context.Context, request mc
 		return mcp.NewToolResultText(fmt.Sprintf("Message %s transcribed but produced no text (silent audio?)", messageID)), nil
 	}
 
-	return mcp.NewToolResultText(fmt.Sprintf("Transcript of message %s:\n\n%s", messageID, transcript)), nil
+	// Build output with absolute paths so calling agents know where to find files.
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Transcript of message %s:\n\n%s\n", messageID, transcript)
+
+	// Audio file absolute path (looked up from media metadata).
+	if m.mediaStore != nil {
+		if meta, metaErr := m.mediaStore.GetMediaMetadata(messageID); metaErr == nil && meta != nil && meta.FilePath != "" {
+			fmt.Fprintf(&sb, "\nAudio file: %s", paths.GetMediaPath(meta.FilePath))
+		}
+	}
+
+	// Transcript .txt sidecar path (deterministic: data/transcripts/<id>.txt).
+	txtPath, absErr := filepath.Abs(filepath.Join(paths.DataDir, "transcripts", messageID+".txt"))
+	if absErr == nil {
+		fmt.Fprintf(&sb, "\nTranscript file: %s", txtPath)
+	}
+
+	return mcp.NewToolResultText(sb.String()), nil
 }
 
 // handleTranscribeAudiosBatch transcribes many audio messages concurrently.
@@ -825,6 +849,7 @@ func (m *MCPServer) handleDownloadMedia(ctx context.Context, request mcp.CallToo
 		return mcp.NewToolResultError("message_id parameter is required"), nil
 	}
 	force := request.GetBool("force", false)
+	saveDir := request.GetString("save_dir", "")
 
 	result, err := m.wa.EnsureMediaDownloaded(ctx, messageID, force)
 	if err != nil {
@@ -839,13 +864,31 @@ func (m *MCPServer) handleDownloadMedia(ctx context.Context, request mcp.CallToo
 			messageID, result.ExistingStatus, result.BytesWritten)
 	}
 	fmt.Fprintf(&sb, "File path (relative): %s\n", result.FilePath)
-	fmt.Fprintf(&sb, "Absolute path: %s\n", result.AbsolutePath)
+
+	// authoritative absolute path — may be overridden by save_dir copy below
+	authAbsPath := result.AbsolutePath
+
+	// If save_dir is set, copy the file there and report the copy path.
+	if saveDir != "" {
+		if mkErr := os.MkdirAll(saveDir, 0755); mkErr != nil {
+			fmt.Fprintf(&sb, "Warning: failed to create save_dir %s: %v (using original path)\n", saveDir, mkErr)
+		} else {
+			destPath := filepath.Join(saveDir, filepath.Base(result.AbsolutePath))
+			if copyErr := copyFile(result.AbsolutePath, destPath); copyErr != nil {
+				fmt.Fprintf(&sb, "Warning: failed to copy to save_dir %s: %v (using original path)\n", destPath, copyErr)
+			} else {
+				authAbsPath = destPath
+			}
+		}
+	}
+
+	fmt.Fprintf(&sb, "Absolute path: %s\n", authAbsPath)
 	fmt.Fprintf(&sb, "MIME type: %s\n", result.ResolvedMimeType)
 
 	// For images, return the bytes INLINE so the model can actually see the image,
 	// not just a path it can't open. Guarded by size to protect the context budget.
 	if strings.HasPrefix(result.ResolvedMimeType, "image/") {
-		if data, rerr := os.ReadFile(result.AbsolutePath); rerr == nil && len(data) > 0 {
+		if data, rerr := os.ReadFile(authAbsPath); rerr == nil && len(data) > 0 {
 			if len(data) <= maxInlineImageBytes {
 				b64 := base64.StdEncoding.EncodeToString(data)
 				fmt.Fprintf(&sb, "(image returned inline, %d bytes)", len(data))
@@ -896,4 +939,24 @@ func (m *MCPServer) handleFlushMediaCache(ctx context.Context, request mcp.CallT
 		fmt.Fprintf(&sb, "\nNote: media_metadata rows kept (media_key/direct_path preserved). Use download_media to re-fetch any of these on demand while the CDN URL is still valid.\n")
 	}
 	return mcp.NewToolResultText(sb.String()), nil
+}
+
+// copyFile copies src to dst (read-all → write). Used by
+// handleDownloadMedia's save_dir feature.
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		os.Remove(dst)
+		return err
+	}
+	return out.Close()
 }

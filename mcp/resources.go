@@ -910,11 +910,9 @@ func (m *MCPServer) handleMediaResource(ctx context.Context, req mcp.ReadResourc
 	// construct full file path
 	fullPath := paths.GetMediaPath(cleanPath)
 
-	// get absolute paths for security validation
-	mediaDir, err := filepath.Abs(paths.DataMediaDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve media directory: %w", err)
-	}
+	// get absolute paths for security validation — use MediaBaseDir() so that
+	// MEDIA_DOWNLOAD_DIR overrides are honoured rather than defaulting to ./data/media.
+	mediaDir := paths.MediaBaseDir()
 
 	absPath, err := filepath.Abs(fullPath)
 	if err != nil {

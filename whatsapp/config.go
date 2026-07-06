@@ -21,7 +21,7 @@ func LoadMediaConfig() MediaConfig {
 		AutoDownloadEnabled:     config.GetEnvBool("MEDIA_AUTO_DOWNLOAD_ENABLED", true),
 		AutoDownloadFromHistory: config.GetEnvBool("MEDIA_AUTO_DOWNLOAD_FROM_HISTORY", true),
 		AutoDownloadMaxSize:     config.GetEnvInt64("MEDIA_AUTO_DOWNLOAD_MAX_SIZE_MB", 20) * 1024 * 1024,
-		StoragePath:             paths.DataMediaDir,
+		StoragePath:             paths.MediaBaseDir(),
 	}
 
 	// parse allowed types — voice-notes (ptt) and documents/videos covered by default

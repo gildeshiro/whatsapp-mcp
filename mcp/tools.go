@@ -284,6 +284,9 @@ func (m *MCPServer) registerTools() {
 			mcp.WithBoolean("force",
 				mcp.Description("Re-download even if the file is already on disk (default: false). Use when you suspect on-disk corruption."),
 			),
+			mcp.WithString("save_dir",
+				mcp.Description("Absolute directory to save the downloaded file into. Defaults to the caller's working directory — the calling agent should pass its own cwd here. If omitted, the file stays under the server media dir."),
+			),
 		),
 		m.handleDownloadMedia,
 	)
