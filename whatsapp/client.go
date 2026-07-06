@@ -29,6 +29,7 @@ type Client struct {
 	store            *storage.MessageStore
 	mediaStore       *storage.MediaStore
 	transcriptStore  *storage.TranscriptStore
+	labelStore       *storage.LabelStore
 	webhookManager   WebhookManager // optional webhook manager
 	mediaConfig      MediaConfig
 	whisperConfig    WhisperConfig
@@ -80,7 +81,7 @@ func (l *fileLogger) Sub(module string) waLog.Logger {
 }
 
 // NewClient creates a new WhatsApp client with the given configuration.
-func NewClient(store *storage.MessageStore, mediaStore *storage.MediaStore, transcriptStore *storage.TranscriptStore, webhookManager WebhookManager, logLevel string) (*Client, error) {
+func NewClient(store *storage.MessageStore, mediaStore *storage.MediaStore, transcriptStore *storage.TranscriptStore, labelStore *storage.LabelStore, webhookManager WebhookManager, logLevel string) (*Client, error) {
 	// validate log level, default to INFO if invalid
 	validLevels := map[string]bool{
 		"DEBUG": true,
@@ -138,6 +139,7 @@ func NewClient(store *storage.MessageStore, mediaStore *storage.MediaStore, tran
 		store:            store,
 		mediaStore:       mediaStore,
 		transcriptStore:  transcriptStore,
+		labelStore:       labelStore,
 		webhookManager:   webhookManager,
 		mediaConfig:      mediaConfig,
 		whisperConfig:    LoadWhisperConfig(),

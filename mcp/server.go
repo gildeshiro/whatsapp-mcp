@@ -16,12 +16,13 @@ type MCPServer struct {
 	wa         *whatsapp.Client
 	store      *storage.MessageStore
 	mediaStore *storage.MediaStore
+	labelStore *storage.LabelStore
 	log        *log.Logger
 	timezone   *time.Location
 }
 
 // NewMCPServer creates a new MCP server with the provided WhatsApp client and storage.
-func NewMCPServer(wa *whatsapp.Client, store *storage.MessageStore, mediaStore *storage.MediaStore, timezone *time.Location) *MCPServer {
+func NewMCPServer(wa *whatsapp.Client, store *storage.MessageStore, mediaStore *storage.MediaStore, labelStore *storage.LabelStore, timezone *time.Location) *MCPServer {
 	s := server.NewMCPServer(
 		"WhatsApp MCP",
 		"1.0.0",
@@ -43,6 +44,7 @@ Use prompts for common workflows or resources for detailed guides.`),
 		wa:         wa,
 		store:      store,
 		mediaStore: mediaStore,
+		labelStore: labelStore,
 		log:        log.Default(),
 		timezone:   timezone,
 	}

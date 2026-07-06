@@ -960,3 +960,199 @@ func copyFile(src, dst string) error {
 	}
 	return out.Close()
 }
+
+// ── Label handlers ────────────────────────────────────────────────────────────
+
+// handleListLabels handles the list_labels tool request.
+func (m *MCPServer) handleListLabels(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if m.labelStore == nil {
+		return mcp.NewToolResultError("label store not available"), nil
+	}
+	labels, err := m.labelStore.ListLabels()
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to list labels: %v", err)), nil
+	}
+	if len(labels) == 0 {
+		return mcp.NewToolResultText("No labels found. Labels are synced from WhatsApp on connect."), nil
+	}
+	var result strings.Builder
+	fmt.Fprintf(&result, "Found %d label(s):\n\n", len(labels))
+	for _, l := range labels {
+		fmt.Fprintf(&result, "ID: %s  Name: %s  Color: %d\n", l.LabelID, l.Name, l.Color)
+	}
+	return mcp.NewToolResultText(result.String()), nil
+}
+
+// handleGetChatLabels handles the get_chat_labels tool request.
+func (m *MCPServer) handleGetChatLabels(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	chatJID, err := request.RequireString("chat_jid")
+	if err != nil {
+		return mcp.NewToolResultError("chat_jid parameter is required"), nil
+	}
+	if m.labelStore == nil {
+		return mcp.NewToolResultError("label store not available"), nil
+	}
+	labels, err := m.labelStore.GetChatLabels(chatJID)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to get chat labels: %v", err)), nil
+	}
+	if len(labels) == 0 {
+		return mcp.NewToolResultText(fmt.Sprintf("No labels applied to chat %s.", chatJID)), nil
+	}
+	var result strings.Builder
+	fmt.Fprintf(&result, "Labels on %s:\n\n", chatJID)
+	for _, l := range labels {
+		fmt.Fprintf(&result, "ID: %s  Name: %s  Color: %d\n", l.LabelID, l.Name, l.Color)
+	}
+	return mcp.NewToolResultText(result.String()), nil
+}
+
+// handleListChatsByLabel handles the list_chats_by_label tool request.
+func (m *MCPServer) handleListChatsByLabel(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	labelID, err := request.RequireString("label_id")
+	if err != nil {
+		return mcp.NewToolResultError("label_id parameter is required"), nil
+	}
+	if m.labelStore == nil {
+		return mcp.NewToolResultError("label store not available"), nil
+	}
+	jids, err := m.labelStore.ListChatsByLabel(labelID)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to list chats by label: %v", err)), nil
+	}
+	if len(jids) == 0 {
+		return mcp.NewToolResultText(fmt.Sprintf("No chats carry label %s.", labelID)), nil
+	}
+	var result strings.Builder
+	fmt.Fprintf(&result, "Chats with label %s (%d):\n\n", labelID, len(jids))
+	for _, jid := range jids {
+		fmt.Fprintf(&result, "%s\n", jid)
+	}
+	return mcp.NewToolResultText(result.String()), nil
+}
+
+// handleCreateLabel handles the create_label tool request.
+func (m *MCPServer) handleCreateLabel(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	name, err := request.RequireString("name")
+	if err != nil {
+		return mcp.NewToolResultError("name parameter is required"), nil
+	}
+	color := int(request.GetFloat("color", 0))
+
+	if !m.wa.IsLoggedIn() {
+		return mcp.NewToolResultError("WhatsApp is not connected"), nil
+	}
+	if m.labelStore == nil {
+		return mcp.NewToolResultError("label store not available"), nil
+	}
+	newID, err := m.labelStore.NextLabelID()
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to compute new label id: %v", err)), nil
+	}
+	if err := m.wa.CreateOrEditLabel(ctx, newID, name, color, false); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to create label: %v", err)), nil
+	}
+	return mcp.NewToolResultText(fmt.Sprintf("Label created: id=%s name=%q color=%d", newID, name, color)), nil
+}
+
+// handleEditLabel handles the edit_label tool request.
+func (m *MCPServer) handleEditLabel(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	labelID, err := request.RequireString("label_id")
+	if err != nil {
+		return mcp.NewToolResultError("label_id parameter is required"), nil
+	}
+
+	if !m.wa.IsLoggedIn() {
+		return mcp.NewToolResultError("WhatsApp is not connected"), nil
+	}
+	if m.labelStore == nil {
+		return mcp.NewToolResultError("label store not available"), nil
+	}
+
+	// fetch current values to fill omitted fields
+	existing, err := m.labelStore.GetLabelByID(labelID)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to fetch label %s: %v", labelID, err)), nil
+	}
+	if existing == nil {
+		return mcp.NewToolResultError(fmt.Sprintf("label %s not found", labelID)), nil
+	}
+
+	name := request.GetString("name", existing.Name)
+	color := int(request.GetFloat("color", float64(existing.Color)))
+
+	if err := m.wa.CreateOrEditLabel(ctx, labelID, name, color, false); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to edit label: %v", err)), nil
+	}
+	return mcp.NewToolResultText(fmt.Sprintf("Label updated: id=%s name=%q color=%d", labelID, name, color)), nil
+}
+
+// handleDeleteLabel handles the delete_label tool request.
+func (m *MCPServer) handleDeleteLabel(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	labelID, err := request.RequireString("label_id")
+	if err != nil {
+		return mcp.NewToolResultError("label_id parameter is required"), nil
+	}
+
+	if !m.wa.IsLoggedIn() {
+		return mcp.NewToolResultError("WhatsApp is not connected"), nil
+	}
+	if m.labelStore == nil {
+		return mcp.NewToolResultError("label store not available"), nil
+	}
+
+	existing, err := m.labelStore.GetLabelByID(labelID)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to fetch label %s: %v", labelID, err)), nil
+	}
+	if existing == nil {
+		return mcp.NewToolResultError(fmt.Sprintf("label %s not found", labelID)), nil
+	}
+
+	if err := m.wa.CreateOrEditLabel(ctx, labelID, existing.Name, existing.Color, true); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to delete label: %v", err)), nil
+	}
+	return mcp.NewToolResultText(fmt.Sprintf("Label %s (%q) deleted.", labelID, existing.Name)), nil
+}
+
+// handleLabelChat handles the label_chat tool request.
+func (m *MCPServer) handleLabelChat(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	chatJID, err := request.RequireString("chat_jid")
+	if err != nil {
+		return mcp.NewToolResultError("chat_jid parameter is required"), nil
+	}
+	labelID, err := request.RequireString("label_id")
+	if err != nil {
+		return mcp.NewToolResultError("label_id parameter is required"), nil
+	}
+
+	if !m.wa.IsLoggedIn() {
+		return mcp.NewToolResultError("WhatsApp is not connected"), nil
+	}
+
+	if err := m.wa.SetChatLabel(ctx, chatJID, labelID, true); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to label chat: %v", err)), nil
+	}
+	return mcp.NewToolResultText(fmt.Sprintf("Label %s applied to chat %s.", labelID, chatJID)), nil
+}
+
+// handleUnlabelChat handles the unlabel_chat tool request.
+func (m *MCPServer) handleUnlabelChat(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	chatJID, err := request.RequireString("chat_jid")
+	if err != nil {
+		return mcp.NewToolResultError("chat_jid parameter is required"), nil
+	}
+	labelID, err := request.RequireString("label_id")
+	if err != nil {
+		return mcp.NewToolResultError("label_id parameter is required"), nil
+	}
+
+	if !m.wa.IsLoggedIn() {
+		return mcp.NewToolResultError("WhatsApp is not connected"), nil
+	}
+
+	if err := m.wa.SetChatLabel(ctx, chatJID, labelID, false); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to unlabel chat: %v", err)), nil
+	}
+	return mcp.NewToolResultText(fmt.Sprintf("Label %s removed from chat %s.", labelID, chatJID)), nil
+}

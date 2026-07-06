@@ -146,6 +146,9 @@ func main() {
 	transcriptStore := storage.NewTranscriptStore(db)
 	log.Println("Transcript cache initialized")
 
+	labelStore := storage.NewLabelStore(db)
+	log.Println("Label store initialized")
+
 	// initialize webhook system
 	webhookConfig := webhook.LoadConfig()
 	webhookStore := storage.NewWebhookStore(db)
@@ -176,7 +179,7 @@ func main() {
 	log.Println("Webhook manager started")
 
 	// initialize WhatsApp client
-	waClient, err := whatsapp.NewClient(store, mediaStore, transcriptStore, webhookManager, logLevel)
+	waClient, err := whatsapp.NewClient(store, mediaStore, transcriptStore, labelStore, webhookManager, logLevel)
 	if err != nil {
 		log.Fatal("Failed to create WhatsApp client:", err)
 	}
@@ -223,7 +226,7 @@ func main() {
 	}
 
 	// initialize MCP server
-	mcpServer := mcp.NewMCPServer(waClient, store, mediaStore, timezone)
+	mcpServer := mcp.NewMCPServer(waClient, store, mediaStore, labelStore, timezone)
 	log.Println("MCP server initialized")
 
 	mux := http.NewServeMux()

@@ -315,4 +315,131 @@ func (m *MCPServer) registerTools() {
 		),
 		m.handleFlushMediaCache,
 	)
+
+	// ── Labels ──────────────────────────────────────────────────────────────
+
+	// 16. list all labels
+	m.server.AddTool(
+		mcp.NewTool("list_labels",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithDescription("List all non-deleted WhatsApp labels (etiquetas) stored locally."),
+		),
+		m.handleListLabels,
+	)
+
+	// 17. get labels applied to a specific chat
+	m.server.AddTool(
+		mcp.NewTool("get_chat_labels",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithDescription("Get all labels currently applied to a specific chat."),
+			mcp.WithString("chat_jid",
+				mcp.Required(),
+				mcp.Description("chat JID from find_chat or list_chats"),
+			),
+		),
+		m.handleGetChatLabels,
+	)
+
+	// 18. list chats that carry a given label
+	m.server.AddTool(
+		mcp.NewTool("list_chats_by_label",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithDescription("List all chat JIDs that currently carry the given label."),
+			mcp.WithString("label_id",
+				mcp.Required(),
+				mcp.Description("label ID to filter by"),
+			),
+		),
+		m.handleListChatsByLabel,
+	)
+
+	// 19. create a new label
+	m.server.AddTool(
+		mcp.NewTool("create_label",
+			mcp.WithReadOnlyHintAnnotation(false),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithDescription("Create a new WhatsApp label. Returns the new label_id."),
+			mcp.WithString("name",
+				mcp.Required(),
+				mcp.Description("display name for the label"),
+			),
+			mcp.WithNumber("color",
+				mcp.Description("label color index (default: 0)"),
+			),
+		),
+		m.handleCreateLabel,
+	)
+
+	// 20. edit an existing label
+	m.server.AddTool(
+		mcp.NewTool("edit_label",
+			mcp.WithReadOnlyHintAnnotation(false),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithDescription("Edit an existing WhatsApp label's name and/or color."),
+			mcp.WithString("label_id",
+				mcp.Required(),
+				mcp.Description("ID of the label to edit"),
+			),
+			mcp.WithString("name",
+				mcp.Description("new display name (omit to keep current)"),
+			),
+			mcp.WithNumber("color",
+				mcp.Description("new color index (omit to keep current)"),
+			),
+		),
+		m.handleEditLabel,
+	)
+
+	// 21. delete a label
+	m.server.AddTool(
+		mcp.NewTool("delete_label",
+			mcp.WithReadOnlyHintAnnotation(false),
+			mcp.WithDestructiveHintAnnotation(true),
+			mcp.WithDescription("Delete (soft-delete) a WhatsApp label. The label is marked deleted on all devices."),
+			mcp.WithString("label_id",
+				mcp.Required(),
+				mcp.Description("ID of the label to delete"),
+			),
+		),
+		m.handleDeleteLabel,
+	)
+
+	// 22. apply a label to a chat
+	m.server.AddTool(
+		mcp.NewTool("label_chat",
+			mcp.WithReadOnlyHintAnnotation(false),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithDescription("Apply a label to a WhatsApp chat."),
+			mcp.WithString("chat_jid",
+				mcp.Required(),
+				mcp.Description("chat JID from find_chat or list_chats"),
+			),
+			mcp.WithString("label_id",
+				mcp.Required(),
+				mcp.Description("ID of the label to apply"),
+			),
+		),
+		m.handleLabelChat,
+	)
+
+	// 23. remove a label from a chat
+	m.server.AddTool(
+		mcp.NewTool("unlabel_chat",
+			mcp.WithReadOnlyHintAnnotation(false),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithDescription("Remove a label from a WhatsApp chat."),
+			mcp.WithString("chat_jid",
+				mcp.Required(),
+				mcp.Description("chat JID from find_chat or list_chats"),
+			),
+			mcp.WithString("label_id",
+				mcp.Required(),
+				mcp.Description("ID of the label to remove"),
+			),
+		),
+		m.handleUnlabelChat,
+	)
 }

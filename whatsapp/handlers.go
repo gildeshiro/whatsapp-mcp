@@ -38,6 +38,37 @@ func (c *Client) eventHandler(evt any) {
 		c.log.Infof("Successfully paired device")
 	case *events.GroupInfo:
 		c.handleGroupInfo(v)
+	case *events.LabelEdit:
+		if c.labelStore != nil {
+			name := v.Action.GetName()
+			color := int(v.Action.GetColor())
+			deleted := v.Action.GetDeleted()
+			if err := c.labelStore.UpsertLabel(v.LabelID, name, color, deleted); err != nil {
+				c.log.Errorf("Failed to upsert label %s from LabelEdit event: %v", v.LabelID, err)
+			} else {
+				c.log.Infof("Label upserted: id=%s name=%q color=%d deleted=%v", v.LabelID, name, color, deleted)
+			}
+		}
+	case *events.LabelAssociationChat:
+		if c.labelStore != nil {
+			labeled := v.Action.GetLabeled()
+			chatJID := c.normalizeJID(v.JID)
+			if err := c.labelStore.UpsertChatAssociation(v.LabelID, chatJID, labeled); err != nil {
+				c.log.Errorf("Failed to upsert chat association label=%s chat=%s: %v", v.LabelID, chatJID, err)
+			} else {
+				c.log.Infof("Chat label association: label=%s chat=%s labeled=%v", v.LabelID, chatJID, labeled)
+			}
+		}
+	case *events.LabelAssociationMessage:
+		if c.labelStore != nil {
+			labeled := v.Action.GetLabeled()
+			chatJID := c.normalizeJID(v.JID)
+			if err := c.labelStore.UpsertMessageAssociation(v.LabelID, chatJID, v.MessageID, labeled); err != nil {
+				c.log.Errorf("Failed to upsert message association label=%s chat=%s msg=%s: %v", v.LabelID, chatJID, v.MessageID, err)
+			} else {
+				c.log.Infof("Message label association: label=%s chat=%s msg=%s labeled=%v", v.LabelID, chatJID, v.MessageID, labeled)
+			}
+		}
 	}
 }
 
