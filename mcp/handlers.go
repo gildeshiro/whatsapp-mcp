@@ -125,6 +125,24 @@ func formatDuration(seconds *int) string {
 	return fmt.Sprintf("%d:%02d", s/60, s%60)
 }
 
+// formatChatLabels returns a compact label suffix for a chat JID, e.g.
+// "  🏷️ [Locatário, Cobrança]", or "" when there are no labels or on error.
+// Always safe to call — guards against nil labelStore.
+func (m *MCPServer) formatChatLabels(jid string) string {
+	if m.labelStore == nil {
+		return ""
+	}
+	labels, err := m.labelStore.GetChatLabels(jid)
+	if err != nil || len(labels) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(labels))
+	for _, l := range labels {
+		names = append(names, l.Name)
+	}
+	return "  🏷️ [" + strings.Join(names, ", ") + "]"
+}
+
 // handleListChats handles the list_chats tool request.
 func (m *MCPServer) handleListChats(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	// get limit parameter with default
@@ -151,7 +169,8 @@ func (m *MCPServer) handleListChats(ctx context.Context, request mcp.CallToolReq
 
 		jid := chat.JID
 		displayName := getDisplayName(chat)
-		fmt.Fprintf(&result, "%d. [%s] %s\n", i+1, chatType, displayName)
+		labelSuffix := m.formatChatLabels(jid)
+		fmt.Fprintf(&result, "%d. [%s] %s%s\n", i+1, chatType, displayName, labelSuffix)
 		fmt.Fprintf(&result, "   JID: %s\n", jid)
 		if chat.ContactName != "" && chat.PushName != "" && chat.ContactName != chat.PushName {
 			fmt.Fprintf(&result, "   (Contact: %s, Push: %s)\n", chat.ContactName, chat.PushName)
@@ -240,7 +259,11 @@ func (m *MCPServer) handleGetChatMessages(ctx context.Context, request mcp.CallT
 	if afterTime != nil {
 		fmt.Fprintf(&result, " (after: %s)", m.formatDateTime(*afterTime))
 	}
-	result.WriteString(":\n\n")
+	result.WriteString(":\n")
+	if labelLine := m.formatChatLabels(chatJID); labelLine != "" {
+		fmt.Fprintf(&result, "Labels: %s\n", strings.TrimSpace(labelLine))
+	}
+	result.WriteString("\n")
 
 	for i := len(messages) - 1; i >= 0; i-- { // reverse to show oldest first
 		msg := messages[i]
@@ -340,11 +363,13 @@ func (m *MCPServer) handleSearchMessages(ctx context.Context, request mcp.CallTo
 			sender = "You"
 		}
 
-		fmt.Fprintf(&result, "%d. [%s] %s in chat %s:\n",
+		chatLabelSuffix := m.formatChatLabels(msg.ChatJID)
+		fmt.Fprintf(&result, "%d. [%s] %s in chat %s%s:\n",
 			i+1,
 			m.formatDateTime(msg.Timestamp),
 			sender,
-			msg.ChatJID)
+			msg.ChatJID,
+			chatLabelSuffix)
 		fmt.Fprintf(&result, "   %s\n", msg.Text)
 
 		// show media metadata if present
